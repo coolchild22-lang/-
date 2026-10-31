@@ -1,0 +1,6 @@
+.env
+output/
+members.db
+members.csv
+__pycache__/
+*.pyc
