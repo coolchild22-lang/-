@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>국회발언추적</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f5f5f3; --border:#dcdcd6;
+    --text:#1e1e1e; --muted:#6b6b64; --accent:#3a5a8c;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; font-family:'Malgun Gothic', -apple-system, sans-serif;
+    background:var(--bg); color:var(--text); line-height:1.6;
+  }
+  header{ padding:1.2rem 1.5rem; border-bottom:1px solid var(--border); }
+  header h1{ margin:0; font-size:1.25rem; }
+  header p{ margin:.3rem 0 0; color:var(--muted); font-size:.85rem; }
+
+  main{ max-width:900px; margin:0 auto; padding:1.5rem; }
+
+  .controls{
+    display:flex; gap:.6rem; flex-wrap:wrap; align-items:center;
+    padding:1rem; background:var(--panel); border:1px solid var(--border); border-radius:6px;
+  }
+  .controls select, .controls input{
+    padding:.5rem .6rem; border:1px solid var(--border); border-radius:4px; font-size:.9rem;
+  }
+  .controls input[type=text]{ flex:1; min-width:200px; }
+  .controls button{
+    padding:.5rem 1rem; border:1px solid var(--accent); background:var(--accent);
+    color:#fff; border-radius:4px; cursor:pointer; font-size:.9rem;
+  }
+  .controls button.secondary{ background:#fff; color:var(--accent); }
+  .controls button:disabled{ opacity:.5; cursor:default; }
+
+  .topic-chips{ display:flex; gap:.4rem; flex-wrap:wrap; margin:.6rem 0 0; }
+  .topic-chips .chip{
+    padding:.3rem .7rem; border:1px solid var(--accent); border-radius:999px;
+    background:#fff; color:var(--accent); font-size:.82rem; cursor:pointer;
+  }
+  .topic-chips .chip:hover{ background:var(--accent); color:#fff; }
+  .topic-chips .chip-note{ color:var(--muted); font-size:.82rem; }
+
+  .status{ margin:1rem 0; color:var(--muted); font-size:.9rem; }
+  .status.error{ color:#a13d3d; }
+
+  section.results{ margin-top:1.5rem; }
+  h2.section-title{ font-size:1rem; border-bottom:1px solid var(--border); padding-bottom:.4rem; }
+
+  .hit{
+    border:1px solid var(--border); border-radius:6px; padding:.8rem 1rem; margin-bottom:.7rem;
+  }
+  .hit .meta{ font-size:.8rem; color:var(--muted); display:flex; gap:.7rem; flex-wrap:wrap; }
+  .hit .excerpt{ margin:.5rem 0; white-space:pre-wrap; }
+  .hit .toggle-src{
+    font-size:.8rem; color:var(--accent); background:none; border:none; cursor:pointer; padding:0;
+    text-decoration:underline;
+  }
+  .hit .full-text{
+    margin-top:.6rem; padding:.6rem; background:var(--panel); border-radius:4px;
+    white-space:pre-wrap; font-size:.9rem; display:none;
+  }
+  .hit .full-text.open{ display:block; }
+
+  /* 원문 보기에 바로 앞/뒤 발언도 같이 보여줌(2026-10-27, 박사님 피드백 —
+     발언 하나만 통째로 봐도 "무슨 질문에 대한 답인지" 같은 대화 흐름은
+     안 보인다는 지적) — 앞뒤는 옅게, 지금 보는 발언만 강조. */
+  .full-text .neighbor{ opacity:.65; padding:.4rem .5rem; }
+  .full-text .current{
+    padding:.4rem .5rem; border-left:3px solid var(--accent); background:rgba(0,0,0,.03);
+  }
+  .full-text .neighbor-label{
+    display:block; font-size:.72rem; color:var(--muted); margin-bottom:.2rem;
+    text-transform:uppercase; letter-spacing:.03em;
+  }
+
+  .analysis-box{
+    border:1px solid var(--border); border-radius:6px; padding:1rem; margin-top:1rem;
+    white-space:pre-wrap; background:var(--panel);
+  }
+
+  .bio-card{
+    display:flex; gap:.6rem; flex-wrap:wrap; align-items:center;
+    padding:.7rem 1rem; margin-bottom:1rem; background:var(--panel);
+    border:1px solid var(--border); border-radius:6px; font-size:.85rem;
+  }
+  .bio-card span{ padding:.15rem .5rem; background:#fff; border-radius:4px; border:1px solid var(--border); }
+
+  .topic-card{
+    border:1px solid var(--border); border-radius:6px; padding:1rem; margin-bottom:1rem;
+  }
+  .topic-card h3{ margin:0 0 .3rem; font-size:1rem; }
+  .topic-card .hit-count{ color:var(--muted); font-size:.8rem; }
+  .topic-card .summary{ white-space:pre-wrap; margin-top:.5rem; }
+
+  .empty-note{ color:var(--muted); font-style:normal; }
+
+  .chart-wrap{
+    border:1px solid var(--border); border-radius:6px; padding:1rem; margin:1rem 0;
+    background:#fff;
+  }
+  .chart-wrap canvas{ max-height:280px; }
+
+  .mode-tabs{ display:flex; gap:.4rem; margin-bottom:.8rem; }
+  .mode-tabs button{
+    padding:.5rem 1rem; border:1px solid var(--border); background:#fff;
+    color:var(--muted); border-radius:6px; cursor:pointer; font-size:.9rem;
+  }
+  .mode-tabs button.active{ border-color:var(--accent); color:var(--accent); font-weight:bold; }
+
+  .chat-log{ display:flex; flex-direction:column; gap:.8rem; margin:1rem 0; }
+  .chat-msg{ max-width:80%; padding:.7rem .9rem; border-radius:8px; white-space:pre-wrap; }
+  .chat-msg.user{ align-self:flex-end; background:var(--accent); color:#fff; }
+  .chat-msg.bot{ align-self:flex-start; background:var(--panel); border:1px solid var(--border); }
+  .chat-msg.bot.pending{ color:var(--muted); }
+  .chat-sources{ margin-top:.6rem; padding-top:.5rem; border-top:1px solid var(--border); font-size:.8rem; }
+  .chat-sources .chat-sources-label{ color:var(--muted); margin-bottom:.3rem; }
+  .chat-source-item{ margin-bottom:.4rem; }
+  .chat-source-item .meta{ color:var(--muted); }
+  .chat-source-item .full-text{
+    margin-top:.3rem; padding:.5rem; background:rgba(0,0,0,.04); border-radius:4px;
+    white-space:pre-wrap; display:none;
+  }
+  .chat-source-item .full-text.open{ display:block; }
+  .chat-input-row{ display:flex; gap:.6rem; }
+  .chat-input-row input{
+    flex:1; padding:.6rem .8rem; border:1px solid var(--border); border-radius:4px; font-size:.9rem;
+  }
+  .chat-input-row button{
+    padding:.6rem 1.2rem; border:1px solid var(--accent); background:var(--accent);
+    color:#fff; border-radius:4px; cursor:pointer; font-size:.9rem;
+  }
+  .chat-input-row button:disabled{ opacity:.5; cursor:default; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>국회발언추적</h1>
+  <p>의원 발언 주제 검색 · 일관성 분석 · 프로필</p>
+</header>
+
+<main>
+  <div class="controls">
+    <select id="member"><option value="">의원 불러오는 중…</option></select>
+    <div class="mode-tabs">
+      <button id="tab-search" class="active">검색 / 프로필</button>
+      <button id="tab-chat">챗봇</button>
+    </div>
+  </div>
+
+  <div id="panel-search">
+    <div class="controls">
+      <input id="topic" type="text" placeholder='주제 (예: "국민연금 소득대체율 보험료율 연금개혁")'>
+      <select id="top" title="결과 개수 — 많이 볼수록 모순을 놓칠 확률은 줄지만 검색이 느려지고 비용이 더 듦">
+        <option value="10">10건</option>
+        <option value="30" selected>30건</option>
+        <option value="50">50건</option>
+        <option value="100">100건</option>
+      </select>
+      <button id="btn-search">검색</button>
+      <button id="btn-profile" class="secondary">프로필 보기</button>
+    </div>
+
+    <div id="topic-chips" class="topic-chips"></div>
+
+    <div id="status" class="status"></div>
+
+    <section id="results" class="results"></section>
+  </div>
+
+  <div id="panel-chat" style="display:none">
+    <p class="empty-note" style="font-size:.85rem">위에서 의원을 고르고, 발언을 근거로 답해주는 챗봇에게 자유 문장으로 물어보세요 (예: "최저임금 인상에 대해 어떻게 생각해?").</p>
+    <div id="chat-status" class="status"></div>
+    <div id="chat-log" class="chat-log"></div>
+    <div class="chat-input-row">
+      <input id="chat-question" type="text" placeholder="질문을 입력하세요">
+      <button id="btn-chat-send">전송</button>
+    </div>
+  </div>
+</main>
+
+<script>
+const API = '';
+
+// "해병대원 특검"처럼 주제 이름에 공백이 들어있으면 그대로 id 속성값으로 쓰면
+// 안 됨(HTML id에 공백 금지) — 카드 생성/조회 둘 다 여기 하나만 거치게 함.
+function topicElId(topic){
+  return 'topic-' + encodeURIComponent(topic);
+}
+
+function esc(s){
+  return (s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// **굵게** 표시만 최소한으로 변환 (analyze.py가 markdown 스타일로 출력함)
+function renderText(s){
+  return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function setStatus(msg, isError=false){
+  const el = document.getElementById('status');
+  el.textContent = msg || '';
+  el.className = 'status' + (isError ? ' error' : '');
+}
+
+// 정당별로 묶어서 보여줌 — 지금은 21대 회의록 일부만 수집한 상태라 다들
+// 발언 수가 적고, 검색용 임베딩은 5명만 끝나 있음. embedded=false인
+// 의원도 목록엔 다 보이되 이름 뒤에 표시만 다르게 해서 구분한다
+// (계기판/등급/이모지/정당별 색칠은 안 씀 — 하지 말라고 한 목록).
+async function loadMembers(){
+  const sel = document.getElementById('member');
+  try{
+    const res = await fetch(`${API}/api/members`);
+    const members = await res.json();
+    if(!members.length){
+      sel.innerHTML = '<option value="">의원 명단 없음</option>';
+      return;
+    }
+    const byParty = new Map();
+    for(const m of members){
+      const key = m.party || '정당 정보 없음';
+      if(!byParty.has(key)) byParty.set(key, []);
+      byParty.get(key).push(m);
+    }
+    sel.innerHTML = [...byParty.entries()].map(([party, list]) => `
+      <optgroup label="${esc(party)}">
+        ${list.map(m =>
+          `<option value="${esc(m.name)}">${esc(m.name)} (${m.speech_count.toLocaleString()}건)${m.embedded ? '' : ' — 검색 준비 전'}</option>`
+        ).join('')}
+      </optgroup>
+    `).join('');
+    loadTopicsFor(sel.value);
+  }catch(e){
+    sel.innerHTML = '<option value="">의원 목록 불러오기 실패</option>';
+  }
+}
+
+// 의원을 고르면 그 의원 발언에 실제로 있는 주제만 칩으로 보여줌 — 없는
+// 주제를 쳐서 무관한 발언(질문 포함)까지 끌려오는 문제를 미리 막으려는 목적.
+// 칩을 누르면 그 주제의 임베딩 검색용 문구(query)를 주제 입력창에 그대로
+// 채운다 (단어 하나로는 검색이 잘 안 잡혀서 항상 문장 형태로 넣어야 함).
+async function loadTopicsFor(member){
+  const chipsEl = document.getElementById('topic-chips');
+  if(!member){ chipsEl.innerHTML = ''; return; }
+  chipsEl.innerHTML = '<span class="chip-note">주요 키워드 불러오는 중…</span>';
+  try{
+    const res = await fetch(`${API}/api/topics?member=${encodeURIComponent(member)}`);
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      chipsEl.innerHTML = `<span class="chip-note">${esc(err.detail || '주요 키워드를 불러올 수 없습니다.')}</span>`;
+      return;
+    }
+    const topics = await res.json();
+    if(!topics.length){
+      chipsEl.innerHTML = '<span class="chip-note">준비된 12개 주제 중 이 의원 발언에서 찾은 게 없습니다.</span>';
+      return;
+    }
+    chipsEl.innerHTML = topics.map(t =>
+      `<button type="button" class="chip" data-query="${esc(t.query)}">${esc(t.topic)} (${t.total_hits})</button>`
+    ).join('');
+    chipsEl.querySelectorAll('.chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('topic').value = btn.dataset.query;
+      });
+    });
+  }catch(e){
+    chipsEl.innerHTML = '';
+  }
+}
+
+async function fetchSpeech(id, targetEl){
+  if(targetEl.dataset.loaded === '1'){
+    targetEl.classList.toggle('open');
+    return;
+  }
+  targetEl.textContent = '불러오는 중…';
+  targetEl.classList.add('open');
+  try{
+    const res = await fetch(`${API}/api/speech/${encodeURIComponent(id)}`);
+    if(!res.ok){
+      targetEl.textContent = '원문을 찾을 수 없음';
+      return;
+    }
+    const data = await res.json();
+    const neighborHtml = (n, label) => n ? `
+      <div class="neighbor">
+        <span class="neighbor-label">${esc(label)} — ${esc(n.name)}${n.role ? ' ' + esc(n.role) : ''}</span>
+        ${esc(n.content)}
+      </div>` : '';
+    targetEl.innerHTML = `
+      ${neighborHtml(data.prev, '이전 발언')}
+      <div class="current">
+        <span class="neighbor-label">이 발언 — ${esc(data.name)}${data.role ? ' ' + esc(data.role) : ''}</span>
+        ${esc(data.content)}
+      </div>
+      ${neighborHtml(data.next, '다음 발언')}
+    `;
+    targetEl.dataset.loaded = '1';
+  }catch(e){
+    targetEl.textContent = '원문 불러오기 실패';
+  }
+}
+
+function hitHtml(h){
+  const period = h.period ? `<span>${esc(h.period)}</span>` : '';
+  const stance = h.stance ? `<span>입장: ${esc(h.stance)} (확신도 ${h.stance_confidence?.toFixed(2)})</span>` : '';
+  return `
+    <div class="hit">
+      <div class="meta">
+        <span>${esc(h.conf_dt)}</span>
+        <span>${esc(h.conf_type)}${h.comm_name ? ' · ' + esc(h.comm_name) : ''}</span>
+        <span>유사도 ${h.similarity}</span>
+        ${period}
+        ${stance}
+      </div>
+      <div class="excerpt">${esc((h.excerpt || h.content || '').slice(0, 300))}${(h.excerpt || h.content || '').length > 300 ? '…' : ''}</div>
+      <button class="toggle-src" data-id="${esc(h.speech_id)}">원문 전체 보기</button>
+      <div class="full-text"></div>
+    </div>
+  `;
+}
+
+let stanceChart = null;
+
+// 세로축은 유사도가 아니라 찬성/반대/중립 입장 — 제목("발언 일관성 분석")과
+// 실제로 보여주는 게 맞아야 한다는 박사님 화면가이드 리뷰 지적 반영.
+// 찬성=빨강/반대=파랑 같은 정파색은 안 씀 (하지 말 것 목록에 있던 항목).
+const STANCE_Y = {'반대': -1, '중립': 0, '판단유보': 0, '찬성': 1};
+
+function drawStanceChart(hits){
+  const canvas = document.getElementById('stance-chart');
+  if(!canvas) return;
+  if(stanceChart){ stanceChart.destroy(); stanceChart = null; }
+  if(typeof Chart === 'undefined') return;
+
+  const points = hits
+    .filter(h => h.stance && h.conf_dt)
+    .map(h => ({
+      x: h.conf_dt.slice(0, 10),
+      y: STANCE_Y[h.stance] ?? 0,
+      r: 4 + (h.stance_confidence || 0) * 6,
+      stance: h.stance,
+      excerpt: (h.excerpt || h.content || '').slice(0, 60),
+    }))
+    .sort((a, b) => a.x < b.x ? -1 : 1);
+
+  if(!points.length) return;
+
+  stanceChart = new Chart(canvas, {
+    type: 'bubble',
+    data: { datasets: [{
+      label: '발언 입장',
+      data: points,
+      backgroundColor: 'rgba(58,90,140,0.55)',
+      borderColor: 'rgba(58,90,140,0.9)',
+    }]},
+    options: {
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `${ctx.raw.x} [${ctx.raw.stance}] ${ctx.raw.excerpt}…`,
+          },
+        },
+      },
+      scales: {
+        x: { type: 'category', title: { display: true, text: '날짜' } },
+        y: {
+          min: -1.5, max: 1.5,
+          ticks: { stepSize: 1, callback: v => ({'-1':'반대','0':'중립','1':'찬성'}[v] ?? '') },
+          title: { display: true, text: '입장' },
+        },
+      },
+    },
+  });
+}
+
+function wireToggles(container){
+  container.querySelectorAll('.toggle-src').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const box = btn.nextElementSibling;
+      fetchSpeech(btn.dataset.id, box);
+    });
+  });
+}
+
+async function runSearch(){
+  const member = document.getElementById('member').value;
+  const topic = document.getElementById('topic').value.trim();
+  const top = document.getElementById('top').value;
+  if(!member || !topic){
+    setStatus('의원과 주제를 둘 다 입력하세요.', true);
+    return;
+  }
+  setStatus('검색 중…');
+  document.getElementById('results').innerHTML = '';
+
+  try{
+    const res = await fetch(`${API}/api/search?member=${encodeURIComponent(member)}&topic=${encodeURIComponent(topic)}&top=${top}`);
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      setStatus(err.detail || '검색 실패', true);
+      return;
+    }
+    const data = await res.json();
+    setStatus('');
+
+    const results = document.getElementById('results');
+    if(!data.hits.length){
+      results.innerHTML = `<p class="empty-note">"${esc(topic)}" 주제로 우리 자료에서 찾은 발언이 없습니다 (수집 범위 밖이거나 유사도 0.35 미만).</p>`;
+      return;
+    }
+
+    results.innerHTML = `
+      <h2 class="section-title">${esc(member)} × ${esc(topic)} — 발언 ${data.hits.length}건 (전체 히트 ${data.total_hits}건 중 시기별 균형 추출)</h2>
+      <div class="chart-wrap"><canvas id="stance-chart"></canvas></div>
+      ${data.analysis ? `<h2 class="section-title">일관성 분석</h2><div class="analysis-box">${renderText(data.analysis)}</div>` : ''}
+      <h2 class="section-title">발언 목록</h2>
+      ${data.hits.map(hitHtml).join('')}
+    `;
+    wireToggles(results);
+    drawStanceChart(data.hits);
+  }catch(e){
+    setStatus('서버에 연결할 수 없습니다.', true);
+  }
+}
+
+// GPT 요약만 보여주면 이 사람이 누군지(정당·지역구·선수) 감이 없다는 지적 —
+// members 테이블 실제 정보 + 위원장/소위원장 등 실제로 진행했던 위원회 role을
+// 프로필 상단에 카드로 보여준다. 임베딩 여부와 무관하게 항상 조회 가능.
+async function loadMemberBio(member){
+  const bioEl = document.getElementById('member-bio');
+  if(!bioEl) return;
+  try{
+    const res = await fetch(`${API}/api/member_bio?member=${encodeURIComponent(member)}`);
+    if(!res.ok){ bioEl.innerHTML = ''; return; }
+    const bio = await res.json();
+    const chairNote = bio.chair_roles.length
+      ? `<span>맡았던 직책: ${esc(bio.chair_roles.join(', '))}</span>`
+      : '';
+    bioEl.innerHTML = `
+      <div class="bio-card">
+        <span>${esc(bio.party || '정당 정보 없음')}</span>
+        <span>${esc(bio.district || '지역구 정보 없음')}</span>
+        <span>${esc(bio.elect_type || '')}</span>
+        <span>${esc(bio.reele || '')}</span>
+        <span>${esc(bio.units || '')}</span>
+        ${chairNote}
+      </div>
+    `;
+  }catch(e){
+    bioEl.innerHTML = '';
+  }
+}
+
+let profileSource = null;
+
+function runProfile(){
+  const member = document.getElementById('member').value;
+  if(!member){
+    setStatus('의원을 선택하세요.', true);
+    return;
+  }
+  if(profileSource) profileSource.close();
+
+  const results = document.getElementById('results');
+  results.innerHTML = `<h2 class="section-title">${esc(member)} 의원 프로필</h2><div id="member-bio"></div><div id="profile-cards"></div>`;
+  const cardsEl = document.getElementById('profile-cards');
+  setStatus('확인 중…');
+  loadMemberBio(member);
+
+  let seenAny = false;
+
+  profileSource = new EventSource(`${API}/api/profile/stream?member=${encodeURIComponent(member)}&topics=3`);
+
+  profileSource.onmessage = (ev) => {
+    const event = JSON.parse(ev.data);
+
+    if(event.type === 'embedding'){
+      // "검색 준비 전" 의원을 프로필로 보면 여기서 먼저 임베딩부터 돈다
+      // (analyze.py build_profile_stream) — 청크 수천 개면 시간이 좀 걸림.
+      seenAny = true;
+      setStatus(event.total > 0
+        ? `이 의원은 처음 조회돼서 임베딩부터 준비 중… (${event.done}/${event.total})`
+        : '이 의원은 처음 조회돼서 임베딩 준비 중…');
+    }else if(event.type === 'ranked'){
+      seenAny = true;
+      setStatus(`상위 ${event.topics.length}개 주제 요약 작성 중…`);
+      cardsEl.innerHTML = event.topics.map(t => `
+        <div class="topic-card" id="${topicElId(t.topic)}">
+          <h3>${esc(t.topic)} <span class="hit-count">${t.total_hits}건 히트</span></h3>
+          <div class="summary empty-note">요약 작성 중…</div>
+        </div>
+      `).join('');
+    }else if(event.type === 'topic'){
+      const card = document.getElementById(topicElId(event.topic));
+      if(card) card.querySelector('.summary').innerHTML = renderText(event.summary);
+    }else if(event.type === 'empty'){
+      cardsEl.innerHTML = `<p class="empty-note">${esc(member)} 의원은 준비된 12개 주제 중 우리 자료에서 검색되는 발언이 없습니다.</p>`;
+    }else if(event.type === 'error'){
+      setStatus(event.detail || '프로필 조회 실패', true);
+    }else if(event.type === 'done'){
+      if(seenAny) setStatus('');
+      profileSource.close();
+    }
+  };
+
+  profileSource.onerror = () => {
+    setStatus('서버 연결이 끊겼습니다.', true);
+    profileSource.close();
+  };
+}
+
+function setChatStatus(msg, isError=false){
+  const el = document.getElementById('chat-status');
+  el.textContent = msg || '';
+  el.className = 'status' + (isError ? ' error' : '');
+}
+
+function addChatMsg(role, text){
+  const log = document.getElementById('chat-log');
+  const div = document.createElement('div');
+  div.className = 'chat-msg ' + role;
+  div.innerHTML = renderText(text);
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+  return div;
+}
+
+// 최근 대화(질문/답변)를 기억해뒀다가 다음 질문에 같이 보낸다 — "근거들 전부
+// 보여줘"처럼 이전 대화에 기대는 후속 질문을 서버가 이해하게 하려는 목적
+// (analyze.py의 _rewrite_followup_query가 이걸로 검색용 문장을 다시 씀).
+// 의원을 바꾸면 대화 맥락도 끊겨야 하므로 같이 초기화한다.
+let chatHistory = [];
+let chatMember = null;
+
+async function sendChat(){
+  const member = document.getElementById('member').value;
+  const input = document.getElementById('chat-question');
+  const question = input.value.trim();
+  if(!member){
+    setChatStatus('의원을 먼저 선택하세요.', true);
+    return;
+  }
+  if(!question) return;
+
+  if(chatMember !== member){
+    chatHistory = [];
+    chatMember = member;
+  }
+
+  addChatMsg('user', question);
+  input.value = '';
+  const sendBtn = document.getElementById('btn-chat-send');
+  sendBtn.disabled = true;
+  setChatStatus('');
+  const pending = addChatMsg('bot pending', '답변 작성 중…');
+
+  try{
+    const res = await fetch(`${API}/api/chat`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ member, question, history: chatHistory, top: 30 }),
+    });
+    if(!res.ok){
+      const err = await res.json().catch(() => ({}));
+      pending.remove();
+      setChatStatus(err.detail || '답변 실패', true);
+      return;
+    }
+    const data = await res.json();
+    pending.classList.remove('pending');
+    pending.innerHTML = renderText(data.answer);
+    // "근거 전부 보여줘"라고 다시 물어봐도 GPT가 매번 짧은 인용만 재생성하는
+    // 게 문제였음(박사님 리뷰 아님, 사용자 직접 지적) — 답변마다 실제로 쓰인
+    // 근거 발언의 원문 전체를 항상 한 번에 볼 수 있게 토글로 붙여둔다.
+    if(data.hits.length){
+      const src = document.createElement('div');
+      src.className = 'chat-sources';
+      src.innerHTML = `<div class="chat-sources-label">근거로 쓴 발언 ${data.hits.length}건 — 원문 전체 확인:</div>` +
+        data.hits.map(h => `
+          <div class="chat-source-item">
+            <span class="meta">${esc(h.conf_dt)} (${esc(h.conf_type)}${h.comm_name ? ' · ' + esc(h.comm_name) : ''})</span>
+            <button class="toggle-src" data-id="${esc(h.speech_id)}">원문 전체 보기</button>
+            <div class="full-text"></div>
+          </div>
+        `).join('');
+      pending.appendChild(src);
+      wireToggles(src);
+    }
+    chatHistory.push({ role: 'user', content: question });
+    chatHistory.push({ role: 'assistant', content: data.answer });
+    chatHistory = chatHistory.slice(-6);
+  }catch(e){
+    pending.remove();
+    setChatStatus('서버에 연결할 수 없습니다.', true);
+  }finally{
+    sendBtn.disabled = false;
+  }
+}
+
+function setMode(mode){
+  const isChat = mode === 'chat';
+  document.getElementById('panel-search').style.display = isChat ? 'none' : '';
+  document.getElementById('panel-chat').style.display = isChat ? '' : 'none';
+  document.getElementById('tab-search').classList.toggle('active', !isChat);
+  document.getElementById('tab-chat').classList.toggle('active', isChat);
+}
+
+document.getElementById('member').addEventListener('change', e => {
+  loadTopicsFor(e.target.value);
+  if(chatMember !== null && chatMember !== e.target.value){
+    chatHistory = [];
+    chatMember = null;
+    document.getElementById('chat-log').innerHTML = '';
+  }
+});
+document.getElementById('btn-search').addEventListener('click', runSearch);
+document.getElementById('btn-profile').addEventListener('click', runProfile);
+document.getElementById('topic').addEventListener('keydown', e => { if(e.key === 'Enter') runSearch(); });
+document.getElementById('tab-search').addEventListener('click', () => setMode('search'));
+document.getElementById('tab-chat').addEventListener('click', () => setMode('chat'));
+document.getElementById('btn-chat-send').addEventListener('click', sendChat);
+document.getElementById('chat-question').addEventListener('keydown', e => { if(e.key === 'Enter') sendChat(); });
+
+loadMembers();
+</script>
+</body>
+</html>
