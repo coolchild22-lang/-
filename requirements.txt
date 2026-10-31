@@ -1,0 +1,25 @@
+# 국회의원 발언 일관성 추적 에이전트 의존 패키지
+# 설치: py -m pip install -r requirements.txt
+#
+# 시스템 의존(별도 설치 필요): Tesseract OCR 엔진 + 한국어(kor) 언어팩
+#   winget install --id tesseract-ocr.tesseract -e
+
+# PDF → 이미지 렌더링 + OCR
+pymupdf>=1.24.0
+pytesseract>=0.3.10
+numpy>=1.24.0
+pillow>=10.0.0
+
+# API 수집
+requests==2.34.2
+
+# 임베딩 + 분석 (MVP) — OCR에는 안 쓰임, 검색/일관성 분석에만 사용
+# 벡터 검색은 chromadb 대신 numpy 브루트포스 코사인 유사도 (embed.py/analyze.py 참고)
+openai>=1.0.0
+
+# 시각화
+matplotlib>=3.7.0
+
+# 로컬 웹 서버 (박사님 화면가이드 리뷰 — 정적 아티팩트 대신 FastAPI로)
+fastapi>=0.110.0
+uvicorn>=0.29.0
